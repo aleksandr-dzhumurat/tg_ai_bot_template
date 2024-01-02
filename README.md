@@ -1,5 +1,7 @@
 # tg_ai_bot_template
-Template repo fo ChatGPT telegram bot
+Template repo for ChatGPT telegram bot integrated with google maps
+
+https://buymeacoffee.com/eventally
 
 First, rename `evn.template` to `.env` and convigure API keys: you need access to AopenAI, Google Places and Telegram bot token
 
