@@ -1,0 +1,6 @@
+python-telegram-bot
+# google-search-results
+openai
+langchain
+jinja2
+beautifulsoup4
