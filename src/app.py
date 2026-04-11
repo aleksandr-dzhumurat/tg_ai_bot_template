@@ -2,7 +2,7 @@ import os
 
 from telegram import __version__ as TG_VER
 
-from ai_agent import dialog_router, prepare_html
+from .ai_agent import dialog_router
 
 try:
     from telegram import __version_info__
@@ -16,7 +16,13 @@ if __version_info__ < (20, 0, 0, "alpha", 1):
         f"visit https://docs.python-telegram-bot.org/en/v{TG_VER}/examples.html"
     )
 from telegram import ForceReply, Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 TOKEN = os.environ['TG_BOT_TOKEN']
 
