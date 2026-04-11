@@ -1,6 +1,12 @@
 python-telegram-bot
-# google-search-results
 openai
 langchain
+langchain-openai
+langchain-core
+langgraph
 jinja2
 beautifulsoup4
+requests
+numpy
+openinference-instrumentation-langchain
+arize-phoenix-otel

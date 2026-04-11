@@ -9,6 +9,7 @@ WORKDIR /srv/
 COPY requirements.txt /srv/
 RUN python3.12 -m pip install --no-cache-dir -r requirements.txt
 
-COPY . /srv/
+COPY scripts/ scripts/
+COPY src/ src/
 
 CMD ["python3.12", "src/app.py"]

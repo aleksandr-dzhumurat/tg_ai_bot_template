@@ -1,23 +1,23 @@
-import os
 import json
 import re
+import uuid
+from dataclasses import dataclass
+from typing import Annotated, List, TypedDict
 
 from jinja2 import Template
-from bs4 import BeautifulSoup
-import openai
-from langchain.chat_models import ChatOpenAI
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
+from langgraph.runtime import Runtime
+from langgraph.store.memory import InMemoryStore
+from phoenix.otel import register
 
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationChain
-from langchain.chat_models import ChatOpenAI
-from langchain.prompts import (
-    ChatPromptTemplate,
-    HumanMessagePromptTemplate,
-    MessagesPlaceholder,
-)
-from langchain.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
+from .google_api import place_recommender
+from .prompts import SYSTEM_PROMPT
 
-from google_api import place_recommender
+register(project_name="tg-ai-bot", auto_instrument=True)
 
 
 def get_json(input_str) -> dict:
@@ -44,66 +44,81 @@ def prepare_html(input_json_array: dict, user: dict) -> str:
     return html_content
 
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
-llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.1)
-prompt = ChatPromptTemplate.from_messages([
-    SystemMessagePromptTemplate.from_template(
-        """
-        You are an conversational chatbot.
-        You must be direct, efficient, impersonal, and professional in all of your communications.
-        You should ask human step by step questions from section "questions"
-        You can change the order of questions if you want.
-        Use only information from human messages, do not imagine answers
-        When the dialog begins do not ask questions like "How can I assist you today?", ask only questions below
+model = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.1)
 
-        questions:
-        - ask the country name the user live in. If you don't know this country, gently ask again. It is country field in result JSON 
-        - ask the city name the user live in. It is city field in result JSON 
-        - ask does human prefer craft beer (yes or no) it is craft field in result JSON
-        
-        Only ask questions right before this line, but in other words, not literally
+class State(TypedDict):
+    messages: Annotated[List[BaseMessage], add_messages]
+    final_answer: bool
+    answer: str
 
-        When you have enough information from chat history, prepare final response.
-        Final response should only consist of document in JSON format with the following fields: [city, country, craft_option]
-        Do not add any extra words in JSON. Do not come up with prepared plan.
+@dataclass
+class Context:
+    user_id: str
+    user: dict
 
-        For example: "city": "Moscow", "country": "Russia", "craft_option": false
-        """
-    ),
-    MessagesPlaceholder(variable_name="history"),
-    HumanMessagePromptTemplate.from_template("{input}")
-])
-memory = ConversationBufferMemory(return_messages=True)
-chat = ConversationChain(
-    llm=llm,
-    memory=memory,
-    verbose=True,
-    prompt=prompt,
-)
+# Initialize store and checkpointer
+store = InMemoryStore()
+checkpointer = MemorySaver()
+
+def chat_node(state: State, runtime: Runtime[Context]):
+    user_id = runtime.context.user_id
+    user = runtime.context.user
+
+    messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
+    response = model.invoke(messages)
+    content = response.content
+
+    json_response = get_json(content)
+    if json_response:
+        # Save to memory store
+        namespace = (user_id, "preferences")
+        memory_id = str(uuid.uuid4())
+        runtime.store.put(namespace, memory_id, json_response)
+
+        # Generate recommendation
+        location_option = f"{json_response['country']}, {json_response['city']}"
+        lat_lng = place_recommender.find_place(location_option)
+        if lat_lng is None:
+            return {
+                "messages": [AIMessage(content=content)],
+                "final_answer": False,
+                "answer": "Sorry, I couldn't locate that city. Could you double-check the country and city name?"
+            }
+        q = "craft beer bar" if json_response.get('craft_option') else "beer pub"
+        recommended_place = place_recommender.get_recs(lat_lng, q=q)
+        html_answer = prepare_html(recommended_place, user)
+
+        return {
+            "messages": [AIMessage(content=content)],
+            "final_answer": True,
+            "answer": html_answer
+        }
+    else:
+        return {
+            "messages": [AIMessage(content=content)],
+            "final_answer": False,
+            "answer": content
+        }
+
+builder = StateGraph(State, context_schema=Context)
+builder.add_node("chat", chat_node)
+builder.add_edge(START, "chat")
+builder.add_edge("chat", END)
+
+graph = builder.compile(store=store, checkpointer=checkpointer)
 
 def dialog_router(human_input: str, user: dict):
-    llm_answer = chat.predict(input=human_input)
-    json_response = get_json(llm_answer)
-    if json_response is not None:
-        location_option = "%s, %s" % (json_response['country'], json_response['city'])
-        lat_lng = place_recommender.find_place(location_option)
-        recommended_place = place_recommender.get_recs(lat_lng)
-        html_answer = prepare_html(recommended_place, user)
-        return {'final_answer': True, 'answer': html_answer}
-    else:
-        return {'final answer': False, 'answer': llm_answer}
+    user_id = user.get('user_name', str(uuid.uuid4()))
 
-if __name__=='__main__':
-    human_input = input("Start the dialog with AI bot: ")
-    for k in range(10):
-        answer = dialog_router(human_input=human_input, user={'name': 'Average Human'})
-        if isinstance(answer, dict):
-            soup = BeautifulSoup(answer['final_answer'])
-            print(soup.get_text())
-            break
-        else:
-            print(answer)
-            human_input = input("Enter your response: ")
-            print('\n..............\n')
-    if k == 6:
-        print("Conversation length overflow")
+    config = {"configurable": {"thread_id": user_id}}
+    context = Context(user_id=user_id, user=user)
+
+    result = graph.invoke(
+        {"messages": [HumanMessage(content=human_input)]},
+        config=config,
+        context=context
+    )
+    return {
+        "final_answer": result["final_answer"],
+        "answer": result["answer"]
+    }

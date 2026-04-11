@@ -34,11 +34,8 @@ class GooglePlaceApi:
 
         return response
 
-    def api_request(self, q: str, lat_lng: Optional[str]):
-        if lat_lng is None:
-            lat, lng = 34.707130,33.022617  # Lemesos city centre
-        else:
-            lat, lng = lat_lng.split(',')
+    def api_request(self, q: str, lat_lng: str):
+        lat, lng = lat_lng.split(',')
         radius = 5000
         
         params = {
@@ -90,7 +87,8 @@ class GooglePlaceApi:
             longitude = location['lng']
             print(f'Latitude: {latitude}, Longitude: {longitude}')
         else:
-            print('Geocoding failed')
+            print(f"Geocoding failed: status={data['status']}, error_message={data.get('error_message', 'n/a')}")
+            return None
         return f'{latitude},{longitude}'
 
 place_recommender = GooglePlaceApi()
