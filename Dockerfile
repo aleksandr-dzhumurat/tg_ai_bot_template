@@ -12,4 +12,4 @@ RUN python3.12 -m pip install --no-cache-dir -r requirements.txt
 COPY scripts/ scripts/
 COPY src/ src/
 
-CMD ["python3.12", "src/app.py"]
+CMD ["python3.12", "-m", "src.app"]

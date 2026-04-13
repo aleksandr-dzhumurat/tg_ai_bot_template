@@ -72,6 +72,27 @@ class GooglePlaceApi:
             print('ERROR: failed to recomend %s', q)
         return res_link
 
+    def reverse_geocode(self, lat: float, lng: float) -> dict | None:
+        """Return {'city': ..., 'country': ...} from GPS coordinates, or None on failure."""
+        params = {
+            "latlng": f"{lat},{lng}",
+            "result_type": "locality",
+            "key": self.google_api_key,
+        }
+        data = requests.get("https://maps.googleapis.com/maps/api/geocode/json", params=params).json()
+        if data["status"] != "OK":
+            print(f"Reverse geocode failed: {data['status']}")
+            return None
+        city = country = None
+        for component in data["results"][0]["address_components"]:
+            if "locality" in component["types"]:
+                city = component["long_name"]
+            if "country" in component["types"]:
+                country = component["long_name"]
+        if city and country:
+            return {"city": city, "country": country}
+        return None
+
     def find_place(self, place_name: str):
         print('place_name %s' % place_name)
         params = {

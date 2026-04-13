@@ -61,8 +61,7 @@ This is a template repository for a Telegram AI bot that integrates ChatGPT (Ope
 
 ### Environment Variables
 - `TG_BOT_TOKEN`: Telegram bot token
-- `OPENAI_API_KEY`: OpenAI API key
-- `GOOGLE_API_KEY`: Google Places API key
+- `GOOGLE_API_KEY`: Google API key (Places + AI)
 
 ### Deployment
 - Docker-based deployment with `Dockerfile` and `docker-compose.yml`

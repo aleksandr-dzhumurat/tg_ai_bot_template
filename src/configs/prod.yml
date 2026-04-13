@@ -1,0 +1,6 @@
+database:
+  sqlite_path: /srv/data/tg_bot_messages.db
+bot:
+  username: group_event_guide_bot
+model:
+  name: gemini-2.0-flash

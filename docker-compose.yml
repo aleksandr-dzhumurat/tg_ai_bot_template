@@ -8,7 +8,4 @@ services:
     environment:
       - PHOENIX_WORKING_DIR=/mnt/data
     volumes:
-      - phoenix_data:/mnt/data   # PHOENIX_WORKING_DIR
-volumes:
-  phoenix_data:
-    driver: local
+      - ./data/phoenix_data:/mnt/data   # PHOENIX_WORKING_DIR
