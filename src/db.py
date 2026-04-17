@@ -40,7 +40,7 @@ async def get_chat_history(chat_id: str, limit: int = 20) -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT role, message_text FROM messages WHERE chat_id = ? ORDER BY timestamp ASC LIMIT ?",
+            "SELECT role, message_text, username FROM messages WHERE chat_id = ? ORDER BY timestamp ASC LIMIT ?",
             (chat_id, limit),
         ) as cursor:
             rows = await cursor.fetchall()

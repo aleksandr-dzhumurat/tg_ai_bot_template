@@ -12,10 +12,12 @@ def geocode_city(location: str) -> str:
 
 
 @tool
-def find_beer_pub(lat_lng: str, craft: bool = False) -> dict:
-    """Find a beer pub or craft bar near the given lat,lng coordinates.
-    Set craft=True if the user prefers craft beer.
-    Returns a dict with 'name' and 'link', or an error dict if nothing found."""
-    q = "craft beer bar" if craft else "beer pub"
-    result = place_recommender.get_recs(lat_lng, q=q)
-    return result or {"error": "No places found."}
+def find_venue(lat_lng: str, query: str) -> str:
+    """Find a venue near the given lat,lng coordinates using a Google Places search query.
+    The query should capture the user's preferences, e.g. 'quiet jazz bar',
+    'Italian restaurant outdoor seating', 'craft beer bar live music'.
+    Returns an HTML link to the venue, or an error message if nothing found."""
+    result = place_recommender.get_recs(lat_lng, q=query)
+    if not result:
+        return "No places found."
+    return f'<a href="{result["link"]}">{result["name"]}</a>'

@@ -13,9 +13,10 @@ build: prepare-dirs
 	docker build -f Dockerfile \
 		-t ${PROJECT_NAME}_tg:latest .
 
-run: stop
+run: stop phoenix
 	docker run -it --rm \
 		--env-file ${CURRENT_DIR}/.env  \
+		--network tg_ai_bot_template_default \
 		-v ${CURRENT_DIR}/src:/srv/src \
 		-v ${CURRENT_DIR}/scripts:/srv/scripts \
 		-v ${CURRENT_DIR}/data/db:/srv/data \
@@ -38,6 +39,7 @@ eval:
 chat: phoenix
 	docker run -it --rm \
 		--env-file ${CURRENT_DIR}/.env  \
+		--network tg_ai_bot_template_default \
 		-v ${CURRENT_DIR}/src:/srv/src \
 		-v ${CURRENT_DIR}/scripts:/srv/scripts \
 		-v ${CURRENT_DIR}/data/db:/srv/data \

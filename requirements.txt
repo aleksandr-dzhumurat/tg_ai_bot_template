@@ -4,7 +4,7 @@ pyyaml
 langchain
 langchain-google-genai
 langchain-core
-langgraph
+langgraph<1.0.0
 jinja2
 beautifulsoup4
 requests

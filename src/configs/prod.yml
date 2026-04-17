@@ -3,4 +3,4 @@ database:
 bot:
   username: group_event_guide_bot
 model:
-  name: gemini-2.0-flash
+  name: gemini-2.5-flash

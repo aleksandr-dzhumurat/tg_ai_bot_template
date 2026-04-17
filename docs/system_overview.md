@@ -1,82 +1,108 @@
 # System Overview
 
 ## Project Description
-This is a template repository for a Telegram AI bot that integrates ChatGPT (OpenAI) with Google Maps to provide personalized beer pub recommendations. The bot engages users in conversational interactions to gather their location and preferences, then suggests nearby craft beer establishments.
+A Telegram AI bot that helps users find nearby venues (bars, restaurants, cafés, clubs, etc.) using Google Gemini and the Google Places API. The bot engages users in natural conversation to gather their location and preferences, then recommends a matching venue via a Google Maps link.
 
 ## Core Features
 
 ### 1. Telegram Bot Integration
 - Built using `python-telegram-bot` library
-- Supports basic commands:
-  - `/start`: Greets the user and provides initial instructions
-  - `/help`: Displays available bot functionalities
-- Handles user messages through an AI-driven dialog system
+- Supports commands:
+  - `/start`: Greets the user
+  - `/help`: Displays usage instructions
+- Handles text messages and Telegram location shares
+- Works in both **private chats** and **group/channel chats**
 
-### 2. AI-Powered Conversation
-- Utilizes OpenAI's GPT-3.5-turbo model via LangChain
-- Implements conversational flow using LangGraph for state management
-- Collects user information step-by-step:
-  - Country of residence
-  - City of residence
-  - Preference for craft beer (yes/no)
-- Maintains conversation history and context across interactions
+### 2. AI-Powered Conversation (ReAct Agent)
+- Uses Google Gemini (`gemini-2.0-flash` by default, configurable in `src/configs/prod.yml`)
+- Implements a ReAct (Reason + Act) agent loop via LangGraph:
+  - `agent_node`: calls the LLM with bound tools
+  - `ToolNode`: executes tool calls returned by the LLM
+  - Loop continues until the LLM produces a final text response
+- Collects through natural conversation:
+  - City and country of the user
+  - Venue type, cuisine, atmosphere, or any other preference
+- In group chats, messages are prefixed with `@username` so the LLM can attribute preferences per participant
 
-### 3. Memory and Persistence
-- Uses LangGraph's InMemoryStore for persisting user preferences
-- Namespaces data by user ID for personalized experiences
-- Supports conversation memory across multiple interactions
+### 3. LangChain Tools
+Two tools are registered with the model via `bind_tools`:
 
-### 4. Location-Based Recommendations
-- Integrates with Google Places API for location search
-- Finds nearby beer pubs based on user's city and country
-- Generates shareable Google Maps links for recommended locations
+| Tool | Input | Output |
+|------|-------|--------|
+| `geocode_city` | `"City, Country"` string | `"lat,lng"` coordinates string |
+| `find_venue` | `lat_lng`, `query` | HTML link `<a href="...">name</a>` |
 
-### 5. Response Formatting
-- Uses Jinja2 templates for HTML-formatted responses
-- Provides user-friendly messages with clickable links
-- Handles both intermediate dialog responses and final recommendations
+Tools are defined in `src/tools.py` using LangChain's `@tool` decorator.
 
-### 6. Development and Testing Tools
-- Console-based testing script (`scripts/chat.py`) for simulating conversations
-- Docker containerization for easy deployment
-- Makefile with build and run commands
-- Environment-based configuration for API keys
+### 4. Message Persistence (SQLite)
+- All messages stored in SQLite via `aiosqlite` (path configured in `src/configs/prod.yml`)
+- Schema: `chat_id`, `username`, `channel`, `role`, `message_text`, `timestamp`
+- `channel` column distinguishes messages from different Telegram groups/channels
+- History is loaded per `chat_id` and reconstructed as LangChain message objects on each request
+- No LangGraph checkpointer — history is managed entirely via SQLite
+
+### 5. Location Sharing
+- Users can share their Telegram location directly
+- Bot reverse-geocodes coordinates to city/country via Google Places API
+- Synthesizes a text input (`"I'm in City, Country"`) to feed the agent
+
+### 6. Observability (Arize Phoenix + OpenTelemetry)
+- Traces sent to Arize Phoenix via OTLP
+- `register(auto_instrument=True)` automatically activates `LangChainInstrumentor`
+- Captured spans:
+  - `CHAIN` — full `graph.invoke()` execution
+  - `LLM` — each Gemini model call
+  - `TOOL` — each `geocode_city` / `find_venue` execution
+- Phoenix runs as a Docker service; endpoint configured via `PHOENIX_COLLECTOR_ENDPOINT`
 
 ## Architecture
 
 ### Components
-- `src/app.py`: Main Telegram bot application
-- `src/ai_agent.py`: AI conversation logic using LangGraph
-- `src/google_api.py`: Google Places API integration
-- `scripts/chat.py`: Console testing interface
+| File | Responsibility |
+|------|----------------|
+| `src/app.py` | Telegram bot handlers, routing private vs group messages |
+| `src/ai_agent.py` | LangGraph ReAct agent, `dialog_router()` entry point |
+| `src/tools.py` | LangChain `@tool` definitions |
+| `src/prompts.py` | System prompt for the agent |
+| `src/db.py` | SQLite message storage and retrieval |
+| `src/config.py` | YAML config loader (`MODEL_NAME`, `BOT_USERNAME`, `DB_PATH`) |
+| `src/google_api.py` | Google Places API integration (geocoding, reverse geocoding, venue search) |
+| `src/configs/prod.yml` | Production configuration (DB path, bot username, model name) |
+| `scripts/chat.py` | Console testing interface |
+| `scripts/db_history.py` | Print message history from SQLite |
 
-### Dependencies
-- `python-telegram-bot`: Telegram API integration
-- `openai`: OpenAI API client
-- `langchain`: LLM framework
-- `langchain-openai`: OpenAI integration for LangChain
-- `langgraph`: Graph-based AI workflows
-- `jinja2`: Template rendering
-- `beautifulsoup4`: HTML parsing (for testing)
+### Key Dependencies
+- `python-telegram-bot`: Telegram API
+- `langchain-google-genai`: Gemini model via LangChain
+- `langchain`, `langchain-core`: LLM framework and tools
+- `langgraph<1.0.0`: ReAct graph orchestration
+- `aiosqlite`: Async SQLite for message persistence
+- `openinference-instrumentation-langchain`: LangChain auto-instrumentation for Phoenix
+- `arize-phoenix-otel`: Phoenix OTLP registration
 
 ### Environment Variables
-- `TG_BOT_TOKEN`: Telegram bot token
-- `GOOGLE_API_KEY`: Google API key (Places + AI)
+| Variable | Purpose |
+|----------|---------|
+| `TG_BOT_TOKEN` | Telegram bot token |
+| `GEMINI_API_KEY` | Google Gemini API key |
+| `GOOGLE_API_KEY` | Google Places API key |
+| `PHOENIX_COLLECTOR_ENDPOINT` | Phoenix OTLP endpoint (default: `http://phoenix:6006`) |
+| `ENV` | Config environment (`prod`) |
+| `DATA_DIR` | SQLite data directory inside container |
 
 ### Deployment
-- Docker-based deployment with `Dockerfile` and `docker-compose.yml`
-- Supports both development and production environments
+- Docker-based: `Dockerfile` for the bot, `docker-compose.yml` for Phoenix
+- `make build` — builds the bot image
+- `make run` — starts Phoenix + bot container (joined to Phoenix network)
+- `make chat` — starts Phoenix + interactive console session
+- `make phoenix` — starts only the Phoenix observability service
 
 ## Usage Flow
-1. User starts conversation with `/start`
-2. Bot asks for country, city, and craft beer preference through natural conversation
-3. Once information is collected, bot queries Google Places API for nearby beer pubs
-4. Bot responds with a formatted recommendation including a Google Maps link
-5. User preferences are stored for future interactions
-
-## Future Enhancements
-- Support for additional location-based services
-- Enhanced memory with semantic search capabilities
-- Multi-language support
-- Integration with more AI models
-- Advanced user preference learning
+1. User sends a message or shares location
+2. Bot loads chat history from SQLite and reconstructs message context
+3. LangGraph agent runs:
+   - LLM decides whether to ask a follow-up question or call tools
+   - If tools needed: `geocode_city` → `find_venue` → LLM formats final answer
+4. Bot replies with text or HTML (venue link)
+5. Both user message and bot reply are saved to SQLite
+6. Full trace (LLM calls + tool calls) sent to Phoenix
